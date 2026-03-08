@@ -10,6 +10,9 @@ import Image from "next/image"
 import Link from "next/link"
 import FormField from "./FormField"
 import { useRouter } from "next/navigation"
+import { createUserWithEmailAndPassword, signInWithEmailAndPassword } from "firebase/auth"
+import { auth } from "@/firebase/client"
+import { signIn, signUp } from "@/lib/actions/auth.action"
 
 const authFormSchema = (type: FormType) => {
     return z.object({
@@ -31,22 +34,49 @@ const AuthForm = ({type}:{type:FormType}) => {
         },
     })
  
-    function onSubmit(data: z.infer<typeof formSchema>) {
+    async function onSubmit(data: z.infer<typeof formSchema>) {
         try{
             if(type === 'sign-up'){
+                const { name, email, password } = data;
+                const userCredentials = await createUserWithEmailAndPassword(auth,email,password);
+                const result = await signUp({
+                    uid: userCredentials.user.uid,
+                    name: name!,
+                    email,
+                    password,
+                })
+                if(!result?.success){
+                    toast.error(result?.message);
+                    return;
+                }
                 toast.success('Account created successfully. Please sign in.');
                 router.push('/sign-in');
                 console.log('SIGN UP', data);
             } else { 
+                const { email,password } = data;
+                const userCredential = await signInWithEmailAndPassword(auth, email, password);
+                const idToken = await userCredential.user.getIdToken();
+                if(!idToken){
+                    toast.error('Sign in failed.');
+                    return;
+                }
+                await signIn({
+                    email, idToken
+                })
                 toast.success('Signed in successfully.');
                 router.push('/');
                 console.log('SIGN IN',data);
             }
-        } catch (error) {
-            console.log(error);
-            toast.error(`There was an error: ${error}`);
+        } catch (e: any) {
+        console.error('Error creating a user', e);
+        if(e.code === 'auth/email-already-in-use'){
+            return{
+                success: false,
+                message: 'This email is already in use.'
+            }
         }
     }
+}
 
     const isSignIn = type === 'sign-in';
  
